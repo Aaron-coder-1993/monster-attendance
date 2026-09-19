@@ -61,7 +61,7 @@ def main():
     st.title("🏐 MONSTER 線上點名系統 ☁️")
     col_title, col_logout = st.columns([8, 1])
     with col_title:
-        st.caption(f"目前登入者：**{st.session_state['current_user']}** ｜ 資料庫：Google Sheets (性別極速版)")
+        st.caption(f"目前登入者：**{st.session_state['current_user']}** ｜ 資料庫：Google Sheets ")
     with col_logout:
         if st.button("登出"):
             st.session_state["logged_in"] = False
