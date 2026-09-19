@@ -1,2 +1,4 @@
+Plaintext
 streamlit
-openpyxl
+gspread
+google-auth
