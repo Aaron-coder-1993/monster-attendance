@@ -6,7 +6,7 @@ from datetime import datetime, date
 import calendar
 
 # ================= 系統設定 =================
-# ⚠️ 請把下面這行引號內的網址，換成你剛才儲存的 Google 試算表網址！
+# ⚠️ 請確保這裡是你最新的 Google Sheet 網址！
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1GuaV0Rwdj3MYHQXL_HNtE3ge0s4eaOEVkpT9TbsKYtI/edit?gid=1805401804#gid=1805401804"
 
 # ================= 連線到 Google Sheets =================
@@ -44,7 +44,7 @@ def main():
         st.markdown("---")
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            st.info("請輸入幹部帳號與密碼以進入系統 (已切換為 Google 雲端版)")
+            st.info("請輸入幹部帳號與密碼以進入系統")
             user_id = st.selectbox("👤 選擇點名帳號", ["A", "B", "C", "D", "E"])
             password = st.text_input("🔑 密碼", type="password")
             
@@ -61,7 +61,7 @@ def main():
     st.title("🏐 MONSTER 線上點名系統 ☁️")
     col_title, col_logout = st.columns([8, 1])
     with col_title:
-        st.caption(f"目前登入者：**{st.session_state['current_user']}** ｜ 資料庫：Google Sheets 即時連線")
+        st.caption(f"目前登入者：**{st.session_state['current_user']}** ｜ 資料庫：Google Sheets (性別極速版)")
     with col_logout:
         if st.button("登出"):
             st.session_state["logged_in"] = False
@@ -77,15 +77,15 @@ def main():
         st.error(f"❌ 無法連線至 Google Sheets，請檢查 Secrets 金鑰是否正確。錯誤訊息: {e}")
         return
 
-    # 處理隱藏資料庫 System_DB
+    # 隱藏資料庫 System_DB (現在只用來記錄「點名次數」作排序用，不再記錄身分)
     try:
         db_sheet = wb.worksheet("System_DB")
     except gspread.exceptions.WorksheetNotFound:
         db_sheet = wb.add_worksheet("System_DB", rows=200, cols=3)
-        db_sheet.append_row(["姓名", "身分", "點名次數"])
+        db_sheet.append_row(["姓名", "點名次數"])
 
     db_records = db_sheet.get_all_records()
-    db_map = {str(r['姓名']): r for r in db_records}
+    db_map = {str(r.get('姓名', '')): int(r.get('點名次數', 0)) for r in db_records if r.get('姓名')}
 
     tab_attendance, tab_manage = st.tabs(["📝 點名作業", "⚙️ 名單管理"])
 
@@ -108,9 +108,8 @@ def main():
         guests_today = 0
         purchased_tapes_today = 0
         
-        # 尋找目標日期所在的欄位 (C 欄=2, D=3...)
-        # 利用月份天數直接推算 index，C欄(1號) index為2，D欄(2號) index為3
-        target_col_idx = date_selected.day + 1
+        # 尋找目標日期所在的欄位 (因為多了C欄性別，所以第一天 1號 從 D欄(index 3) 開始)
+        target_col_idx = date_selected.day + 2 
         
         if sheet_exists and len(all_values) >= 2:
             try:
@@ -120,18 +119,18 @@ def main():
                 
         tape_col_idx = None
         if len(all_values) >= 3:
-            for i, val in enumerate(all_values[2]):
+            for i, val in enumerate(all_values[2]): # 第三列找「白貼」
                 if str(val).strip() == "白貼":
                     tape_col_idx = i
                     break
 
-        # 自動把試算表的新人加進資料庫
         missing_in_db = []
-        for r_idx, row in enumerate(all_values[3:], start=4):
+        for r_idx, row in enumerate(all_values[3:], start=4): # 第四列開始是名單
             if len(row) < 2: continue
             name = str(row[1]).strip()
             if not name: continue
             
+            # 外賓與白貼購買專屬列
             if name == "外賓人數":
                 if sheet_exists and target_col_idx < len(row) and row[target_col_idx]:
                     try: guests_today = int(row[target_col_idx])
@@ -143,12 +142,20 @@ def main():
                     except: pass
                 continue
 
+            # ✨ 全新邏輯：透過 C 欄(index 2) 的文字「男/女」來判斷身分
+            gender = str(row[2]).strip() if len(row) > 2 else ""
+            if gender == "男":
+                role = "🟦 底層"
+            elif gender == "女":
+                role = "🟥 上層"
+            else:
+                role = "未分類"
+
             if name not in db_map:
-                missing_in_db.append([name, "未分類", 0])
-                db_map[name] = {'身分': '未分類', '點名次數': 0}
+                missing_in_db.append([name, 0])
+                db_map[name] = 0
             
-            role = db_map[name]['身分']
-            count = db_map[name]['點名次數']
+            count = db_map[name]
             members.append({"name": name, "role": role, "row": r_idx, "count": count})
             
             if sheet_exists and target_col_idx < len(row) and str(row[target_col_idx]).strip() == "1":
@@ -160,13 +167,14 @@ def main():
         if missing_in_db:
             db_sheet.append_rows(missing_in_db)
 
+        # 排序
         bases = [m["name"] for m in members if m["role"] == "🟦 底層"]
         flyers = [m["name"] for m in members if m["role"] == "🟥 上層"]
-        bases.sort(key=lambda x: db_map[x]['點名次數'], reverse=True)
-        flyers.sort(key=lambda x: db_map[x]['點名次數'], reverse=True)
+        bases.sort(key=lambda x: db_map.get(x, 0), reverse=True)
+        flyers.sort(key=lambda x: db_map.get(x, 0), reverse=True)
         
         available_for_tape = [m['name'] for m in members if m['name'] not in claimed_tapes]
-        available_for_tape.sort(key=lambda x: db_map[x]['點名次數'], reverse=True)
+        available_for_tape.sort(key=lambda x: db_map.get(x, 0), reverse=True)
 
         st.divider()
         col_left, col_right = st.columns([1.2, 1])
@@ -195,14 +203,13 @@ def main():
                             valid_sheets.sort()
                             source_sheet = wb.worksheet(valid_sheets[-1]) if valid_sheets else sheet_for_read
                             
-                            # 複製整張工作表
                             new_sheet = wb.duplicate_sheet(source_sheet.id, new_sheet_name=target_sheet_name)
                             days_in_month = calendar.monthrange(date_selected.year, date_selected.month)[1]
                             
-                            # 批次清空與重設日期
+                            # ✨ 換月清空邏輯：現在日期欄位是從 D欄 (4) 到 AH欄 (34)
                             cell_updates = []
-                            for c_idx in range(3, 34): 
-                                day = c_idx - 2
+                            for c_idx in range(4, 35): 
+                                day = c_idx - 3
                                 if day <= days_in_month:
                                     cell_updates.append(gspread.Cell(row=2, col=c_idx, value=f"{date_selected.month}/{day}"))
                                 else:
@@ -221,8 +228,7 @@ def main():
                         else:
                             target_sheet = wb.worksheet(target_sheet_name)
 
-                        # 準備更新內容
-                        t_col = target_col_idx + 1 # 轉成 1-based 給 API
+                        t_col = target_col_idx + 1 # Gspread API 是 1-based
                         updates = []
                         updates.append(gspread.Cell(row=1, col=t_col, value=st.session_state["current_user"]))
                         
@@ -238,30 +244,29 @@ def main():
                                 if name in name_to_row:
                                     updates.append(gspread.Cell(row=name_to_row[name], col=t_tape_col, value="V"))
                         
-                        # 外賓與購買
+                        # 處理外賓與購買
                         guest_r = next((i for i, row in enumerate(all_values) if len(row)>1 and str(row[1]).strip()=="外賓人數"), None)
                         if not guest_r:
                             guest_r = target_sheet.row_count + 1
-                            target_sheet.update(f"A{guest_r}:B{guest_r}", [["x", "外賓人數"]])
-                        else: guest_r += 1 # 0-based 轉 1-based
+                            target_sheet.update(values=[["x", "外賓人數"]], range_name=f"A{guest_r}:B{guest_r}")
+                        else: guest_r += 1 
                         updates.append(gspread.Cell(row=guest_r, col=t_col, value=guests_input_count if guests_input_count > 0 else ""))
                         
                         purchase_r = next((i for i, row in enumerate(all_values) if len(row)>1 and str(row[1]).strip()=="購買白貼"), None)
                         if not purchase_r:
                             purchase_r = target_sheet.row_count + 1
-                            target_sheet.update(f"A{purchase_r}:B{purchase_r}", [["x", "購買白貼"]])
+                            target_sheet.update(values=[["x", "購買白貼"]], range_name=f"A{purchase_r}:B{purchase_r}")
                         else: purchase_r += 1
                         updates.append(gspread.Cell(row=purchase_r, col=t_col, value=tapes_purchased_input if tapes_purchased_input > 0 else ""))
                         
-                        # 批次更新點名
                         target_sheet.update_cells(updates)
                         
-                        # 更新常來次數資料庫
+                        # 更新點名次數資料庫
                         db_all = db_sheet.get_all_records()
                         count_updates = []
                         for i, r in enumerate(db_all, start=2):
-                            if r['姓名'] in all_attendees:
-                                count_updates.append(gspread.Cell(row=i, col=3, value=r['點名次數'] + 1))
+                            if r.get('姓名') in all_attendees:
+                                count_updates.append(gspread.Cell(row=i, col=2, value=int(r.get('點名次數', 0)) + 1))
                         if count_updates:
                             db_sheet.update_cells(count_updates)
                         
@@ -280,8 +285,8 @@ def main():
             flyers_present = [p['name'] for p in attendees_today if p['role'] == "🟥 上層"]
             
             st.markdown(f"**總出席隊員：{len(attendees_today)} 人**")
-            st.markdown(f"🟦 **底層 ({len(bases_present)})：** " + "、".join(bases_present))
-            st.markdown(f"🟥 **上層 ({len(flyers_present)})：** " + "、".join(flyers_present))
+            st.markdown(f"🟦 **底層/男 ({len(bases_present)})：** " + "、".join(bases_present))
+            st.markdown(f"🟥 **上層/女 ({len(flyers_present)})：** " + "、".join(flyers_present))
             
             col_s1, col_s2 = st.columns(2)
             col_s1.markdown(f"👤 **外賓人數：** `{guests_today}` 人")
@@ -325,7 +330,7 @@ def main():
     # ================== 分頁 2：名單管理 ==================
     with tab_manage:
         st.header("⚙️ 隊員名單增刪管理")
-        st.info("💡 系統已升級雲端資料庫！若清單出現『未分類』，請利用此頁面的【修改】功能將其設定為上層或底層。")
+        st.info("💡 系統已升級「男/女」極速判斷！新增與修改人員時，系統會自動幫您將性別填入 C 欄。")
         col_add, col_edit, col_del = st.columns(3)
         
         with col_add:
@@ -342,7 +347,6 @@ def main():
                         st.warning("此人員已存在！")
                     else:
                         try:
-                            # 找安插位置
                             ref_row = 4
                             for m in reversed(members):
                                 if m['role'] == new_role:
@@ -350,7 +354,6 @@ def main():
                                     break
                             insert_idx = ref_row + 1
                             
-                            # 完美複製上一行的格式與公式
                             body = {
                                 "requests": [
                                     {"insertDimension": {"range": {"sheetId": sheet_for_read.id, "dimension": "ROWS", "startIndex": insert_idx - 1, "endIndex": insert_idx}}},
@@ -361,14 +364,17 @@ def main():
                             }
                             wb.client.batch_update(wb.id, body)
                             
-                            # 填入姓名並清空點名區塊
-                            sheet_for_read.update(f"A{insert_idx}:B{insert_idx}", [["x", new_name]])
+                            # ✨ 自動寫入男/女
+                            gender_val = "男" if new_role == "🟦 底層" else "女"
+                            sheet_for_read.update(values=[["x", new_name, gender_val]], range_name=f"A{insert_idx}:C{insert_idx}")
+                            
+                            # 清空後面的打卡紀錄 (從 D 欄開始清空)
                             blanks = [[""] * 31]
-                            sheet_for_read.update(f"C{insert_idx}:AG{insert_idx}", blanks)
+                            sheet_for_read.update(values=blanks, range_name=f"D{insert_idx}:AH{insert_idx}")
                             if tape_col_idx:
                                 sheet_for_read.update_cell(insert_idx, tape_col_idx + 1, "")
                                 
-                            db_sheet.append_row([new_name, new_role, 0])
+                            db_sheet.append_row([new_name, 0])
                             
                             st.session_state["success_msg"] = f"✅ 成功將 {new_name} 加入名單！"
                             st.rerun()
@@ -380,21 +386,21 @@ def main():
                 st.subheader("✏️ 修改身分/姓名")
                 old_name = st.selectbox("選擇要修改的隊員", sorted([m['name'] for m in members]))
                 edit_new_name = st.text_input("輸入正確姓名 (若不改名請留空)")
-                edit_role = st.selectbox("修改身分", ["🟦 底層", "🟥 上層", "未分類"], index=0)
+                edit_role = st.selectbox("修改身分", ["🟦 底層", "🟥 上層"], index=0)
                 
                 if st.form_submit_button("儲存修改"):
                     try:
                         target_name = edit_new_name.strip() if edit_new_name.strip() else old_name
+                        gender_val = "男" if edit_role == "🟦 底層" else "女"
+                        r = next(m['row'] for m in members if m['name'] == old_name)
                         
-                        # 改表單名字
-                        if target_name != old_name:
-                            r = next(m['row'] for m in members if m['name'] == old_name)
-                            sheet_for_read.update_cell(r, 2, target_name)
+                        # ✨ 一次性把新名字跟性別(男/女)寫入 B 欄與 C 欄
+                        sheet_for_read.update(values=[[target_name, gender_val]], range_name=f"B{r}:C{r}")
                             
-                        # 改資料庫
+                        # 更新資料庫
                         cell = db_sheet.find(old_name, in_column=1)
                         if cell:
-                            db_sheet.update(f"A{cell.row}:B{cell.row}", [[target_name, edit_role]])
+                            db_sheet.update_cell(cell.row, 1, target_name)
                         
                         st.session_state["success_msg"] = f"✏️ 成功更新「{target_name}」的資料！"
                         st.rerun()
