@@ -285,8 +285,8 @@ def main():
             flyers_present = [p['name'] for p in attendees_today if p['role'] == "🟥 上層"]
             
             st.markdown(f"**總出席隊員：{len(attendees_today)} 人**")
-            st.markdown(f"🟦 **底層/男 ({len(bases_present)})：** " + "、".join(bases_present))
-            st.markdown(f"🟥 **上層/女 ({len(flyers_present)})：** " + "、".join(flyers_present))
+            st.markdown(f"🟦 **底層 ({len(bases_present)})：** " + "、".join(bases_present))
+            st.markdown(f"🟥 **上層 ({len(flyers_present)})：** " + "、".join(flyers_present))
             
             col_s1, col_s2 = st.columns(2)
             col_s1.markdown(f"👤 **外賓人數：** `{guests_today}` 人")
@@ -330,7 +330,7 @@ def main():
     # ================== 分頁 2：名單管理 ==================
     with tab_manage:
         st.header("⚙️ 隊員名單增刪管理")
-        st.info("💡 系統已升級「男/女」極速判斷！新增與修改人員時，系統會自動幫您將性別填入 C 欄。")
+        st.info("💡 系統已升級！新增與修改人員時，系統會自動填入。")
         col_add, col_edit, col_del = st.columns(3)
         
         with col_add:
