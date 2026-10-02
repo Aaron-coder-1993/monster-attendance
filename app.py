@@ -7,7 +7,7 @@ import calendar
 
 # ================= 系統設定 =================
 # ⚠️ 請確保這裡是你最新的 Google Sheet 網址！
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1GuaV0Rwdj3MYHQXL_HNtE3ge0s4eaOEVkpT9TbsKYtI/edit?gid=1889322265#gid=1889322265"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1GuaV0Rwdj3MYHQXL_HNtE3ge0s4eaOEVkpT9TbsKYtI/edit?usp=drivesdk"
 
 # ================= 連線到 Google Sheets =================
 @st.cache_resource
